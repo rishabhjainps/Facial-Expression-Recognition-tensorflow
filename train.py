@@ -54,8 +54,10 @@ def train_model():
 
 	sess = setup_tensorflow()
 
-	train_features, train_labels = input_pipeline.get_files(train_dir)
-	dev_features , dev_labels  = input_pipeline.get_files(dev_dir)
+	with tf.name_scope('train_input'):
+		train_features, train_labels = input_pipeline.get_files(train_dir)
+	with tf.name_scope('dev_input'):
+		dev_features , dev_labels  = input_pipeline.get_files(dev_dir)
 
 	output, var_list = model.create_model(sess, train_features, train_labels)
 
@@ -98,7 +100,7 @@ def train_model():
 			feed_dict = {learning_rate: LEARNING_RATE}
 			ops = [minimize, softmax_loss, total_loss, merged_summaries]
 			_, sloss, loss, summaries = sess.run(ops, feed_dict=feed_dict)
-			print ("Epoch /" + str (epoch) + " /" + str(EPOCHS)+" batch /" + str (batch) + " /" + str(num_batches)   + " ; Loss " + str(Tloss)+ " softmax Loss " + str(Tsloss))
+			#print ("Epoch /" + str (epoch) + " /" + str(EPOCHS)+" batch /" + str (batch) + " /" + str(num_batches)   + " ; Loss " + str(Tloss)+ " softmax Loss " + str(Tsloss))
 			Tsloss += sloss
 			Tloss  += loss
 

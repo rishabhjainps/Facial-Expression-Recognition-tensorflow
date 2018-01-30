@@ -195,16 +195,18 @@ def compute_loss(cnn_output, labels):
 
 def compute_accuracy(sess):
 
-    eval_input = tf.placeholder(tf.float32, shape=[FLAGS.BATCH_SIZE,48,48,1])
-    eval_label = tf.placeholder(tf.float32, shape=[FLAGS.BATCH_SIZE])
+	eval_input = tf.placeholder(tf.float32, shape=[FLAGS.BATCH_SIZE,48,48,1])
+	eval_label = tf.placeholder(tf.float32, shape=[FLAGS.BATCH_SIZE])
 
-    eval_label2 = tf.cast(eval_label,tf.int64)
+	eval_label2 = tf.cast(eval_label,tf.int64)
 
-    output, _ =  convolutional_nn(sess, eval_input, eval_label)
+	with tf.variable_scope('cnn') as scope:
+		scope.reuse_variables()
+		output, _ =  convolutional_nn(sess, eval_input, eval_label)
 
-    accuracy = tf.contrib.metrics.accuracy(tf.argmax(output, 1), eval_label2)
+	accuracy = tf.contrib.metrics.accuracy(tf.argmax(output, 1), eval_label2)
 
-    return output, eval_input, eval_label, accuracy
+	return output, eval_input, eval_label, accuracy
 
 
 def create_optimizer(total_loss, var_list):
