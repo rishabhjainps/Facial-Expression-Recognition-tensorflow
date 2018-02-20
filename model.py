@@ -22,7 +22,6 @@ class Model:
 		self.name = name
 		self.outputs = [ features ]
 		
-
 	def get_last_output(self):
 		"""Returns the last ouput inserted in outputs list while building the graph	 
 			Used for input to the next layer
@@ -88,19 +87,21 @@ class Model:
 		self.outputs.append(output)
 		return self
 
-	def add_batch_norm(self , mean=0.01, variance=1.00):
+	def add_max_pool(self, ksize, strides, padding="SAME"):
+		"""Add MaxPool to the model, input shape is same as output shape
+		"""
+		with tf.variable_scope(self.get_layer_str()):
+			output = tf.nn.max_pool(self.get_last_output(),ksize=[1,ksize,ksize,1],strides=[1,strides,strides,1],padding=padding, data_format='NHWC')
+
+		self.outputs.append(output)
+		return self
+
+	def add_batch_norm(self , is_training):
 		"""Add batch norm to the model, input shape is same as output shape
 		"""
-
 		with tf.variable_scope(self.get_layer_str()):
-
-			# Initialize alpha and beta for batch norm
-			alpha = tf.get_variable('alpha', initializer=tf.constant(0.0 , shape=[1]) )
-			beta  = tf.get_variable('beta' , initializer=tf.constant(1.0 , shape=[1]) )
-			epsilon = 1e-3
-
-			output =tf.nn.batch_normalization( self.get_last_output() , mean , variance , alpha , beta , epsilon  )
-
+			output =tf.contrib.layers.batch_norm(self.get_last_output(),center=True, scale=True,updates_collections=None,  is_training=is_training,scope='bn')
+		
 		self.outputs.append(output)
 		return self
 
@@ -113,7 +114,23 @@ class Model:
 		self.outputs.append(output)
 		return self
 
+	def add_dropout(self, keep_prob, is_training):
+		"""Add dropout to the model, dropout keep_prob decides number of neurons to be closed
+		   With probability keep_prob, outputs the input element scaled up by 1 / keep_prob, otherwise outputs 0.
+		   NO DROPOUT SHOULD BE USED WHILE TESTING OR CALCULATING RESULTS
+		"""
+		with tf.variable_scope(self.get_layer_str()):
+			output = tf.cond( is_training, 
+				lambda: tf.nn.dropout( self.get_last_output(), keep_prob ) , 
+				lambda: tf.nn.dropout( self.get_last_output(), 1.0 ) )
+
+		self.outputs.append(output)
+		return self
+
 	def flatten(self):
+		"""Flattens the last layer output while maintaining the batch_size.
+		   Assumes that the first dimension represents the batch.
+		"""
 		with tf.variable_scope(self.get_layer_str()):
 			output = tf.contrib.layers.flatten(self.get_last_output())
 
@@ -121,6 +138,8 @@ class Model:
 		return self
 
 	def add_fully_connected_with_relu(self , num_output ):
+		"""Adds a fully connected layer with relu activation
+		"""
 		with tf.variable_scope(self.get_layer_str()):
 			output = tf.contrib.layers.fully_connected(self.get_last_output(), num_output)
 
@@ -128,13 +147,17 @@ class Model:
 		return self	
 
 	def add_fully_connected(self , num_output ):
+		"""Adds a fully connected layer
+		   Useful in last layer without relu
+		"""
 		with tf.variable_scope(self.get_layer_str()):
 			output = tf.contrib.layers.fully_connected(self.get_last_output(), num_output ,activation_fn=None)
 
 		self.outputs.append(output)
 		return self
 
-def convolutional_nn(sess, features, labels):
+
+def convolutional_nn(sess, features, labels, is_training):
 	
 	old_vars = tf.global_variables()
 
@@ -145,8 +168,10 @@ def convolutional_nn(sess, features, labels):
 
 	for layer in cnn_layer_list :
 		model.add_conv2d(layer[0],layer[1])
-		model.add_batch_norm()
+		model.add_batch_norm(is_training)
 		model.add_relu()
+		model.add_max_pool(2,2)
+		model.add_dropout(0.25,is_training)
 
 	model.flatten()
 	# define fully connected as tuples defining number of outputs
@@ -155,8 +180,9 @@ def convolutional_nn(sess, features, labels):
 	# Fully connected layers
 	for layer in fc_layer_list:
 		model.add_fully_connected(layer)
-		model.add_batch_norm()
+		model.add_batch_norm(is_training)
 		model.add_relu()
+		model.add_dropout(0.25,is_training)
 
 	# Output layer
 	num_outputs = 7
@@ -171,21 +197,21 @@ def convolutional_nn(sess, features, labels):
 def create_model(sess, features, labels):
 	""" Create the deep cnn model
 	"""
-
 	height   = int( features.get_shape()[1] )
 	width    = int( features.get_shape()[2] )
 	channels = int( features.get_shape()[3] )
 
+	is_training = tf.placeholder(tf.bool)
+
 	with tf.variable_scope('cnn') as scope:
-		output, cnn_vars = convolutional_nn(sess, features, labels)
+		output, cnn_vars = convolutional_nn(sess, features, labels,is_training)
 		scope.reuse_variables()
 
-	return output, cnn_vars
+	return output, cnn_vars, is_training
 
 def compute_loss(cnn_output, labels):
 	"""Calculate total loss with regulariztion loss
 	"""
-	print("loss")
 	softmax_loss = tf.reduce_mean( tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels,logits=cnn_output) )
 	tf.add_to_collection('losses',softmax_loss)
 
@@ -194,29 +220,35 @@ def compute_loss(cnn_output, labels):
 	return total_loss, softmax_loss
 
 def compute_accuracy(sess):
-
+	"""Calculates accuracy of eval_input running graph on basis eval_label provided as placeholder
+		provided using feed_dict. 
+		Used for calculating training and dev accuracy 
+	"""
 	eval_input = tf.placeholder(tf.float32, shape=[FLAGS.BATCH_SIZE,48,48,1])
 	eval_label = tf.placeholder(tf.float32, shape=[FLAGS.BATCH_SIZE])
 
 	eval_label2 = tf.cast(eval_label,tf.int64)
+	is_training = tf.placeholder(tf.bool)
 
 	with tf.variable_scope('cnn') as scope:
 		scope.reuse_variables()
-		output, _ =  convolutional_nn(sess, eval_input, eval_label)
+		output, _ =  convolutional_nn(sess, eval_input, eval_label,is_training)
 
 	accuracy = tf.contrib.metrics.accuracy(tf.argmax(output, 1), eval_label2)
 
-	return output, eval_input, eval_label, accuracy
-
+	return output, eval_input, eval_label, accuracy , is_training
 
 def create_optimizer(total_loss, var_list):
-	"""
+	"""Create an optimizer with desired parameter
 	"""
 	# global_step refer to the number of batches seen by the graph.
 	global_step = tf.Variable(0, dtype=tf.int64, trainable=False, name='global_step')
 	learning_rate = tf.placeholder(dtype=tf.float32, name='learning_rate')
 
 	optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, name='optimizer')
-	minimize  = optimizer.minimize(total_loss, var_list=var_list, name='loss_minimize', global_step=global_step )
+
+	update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+	with tf.control_dependencies(update_ops):
+		minimize  = optimizer.minimize(total_loss, var_list=var_list, name='loss_minimize', global_step=global_step )
 
 	return (global_step,learning_rate,minimize)

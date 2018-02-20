@@ -3,3 +3,4 @@ model/
 logs/
 *.pyc
 data/*.csv
+test.py
