@@ -108,7 +108,7 @@ def train_model():
 			feed_dict = {learning_rate: LEARNING_RATE,is_training1:True}
 			ops = [minimize, softmax_loss, total_loss, merged_summaries]
 			_, sloss, loss, summaries = sess.run(ops, feed_dict=feed_dict)
-			print ("Epoch /" + str (epoch) + " /" + str(EPOCHS)+" batch /" + str (batch) + " /" + str(num_batches)   + " ; Loss " + str(loss)+ " softmax Loss " + str(sloss))
+			#print ("Epoch /" + str (epoch) + " /" + str(EPOCHS)+" batch /" + str (batch) + " /" + str(num_batches)   + " ; Loss " + str(loss)+ " softmax Loss " + str(sloss))
 			Tsloss += sloss
 			Tloss  += loss
 

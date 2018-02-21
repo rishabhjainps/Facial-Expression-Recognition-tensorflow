@@ -59,15 +59,9 @@ class Model:
 
 			# Initialize weight variable with shape [kernel_size,kernel_size,input_channels,output_channels]
 			# between previous layer and new layer 
+			regularizer = tf.contrib.layers.l2_regularizer(scale=FLAGS.lambd)
 			weight = tf.get_variable('weight',shape=[kernel_size,kernel_size,input_channels,output_channels],
-				initializer=tf.contrib.layers.xavier_initializer())
-
-			# Compute the weight decay term
-			#  decay term (lambd)*||w||^2 
-			weight_decay = tf.multiply( tf.nn.l2_loss(weight) , FLAGS.lambd )
-
-			# Add all (lambd)*||w||^2 in this layer to the losses
-			tf.add_to_collection('losses',weight_decay)
+				initializer=tf.contrib.layers.xavier_initializer(),regularizer=regularizer  )
 
 			# Define the convolution layer with output of last layer as input to this layer and define kernel 
 			# out will be of 4-dimension ( [ batch, ceil(previous_layer_height/stride) , ceil(previous_layer_width/stride) ,output_channels ] )
@@ -141,7 +135,8 @@ class Model:
 		"""Adds a fully connected layer with relu activation
 		"""
 		with tf.variable_scope(self.get_layer_str()):
-			output = tf.contrib.layers.fully_connected(self.get_last_output(), num_output)
+			weights_regularizer = tf.contrib.layers.l2_regularizer(scale=FLAGS.lambd)
+			output = tf.contrib.layers.fully_connected(self.get_last_output(), num_output, weights_regularizer = weights_regularizer )
 
 		self.outputs.append(output)
 		return self	
@@ -151,7 +146,8 @@ class Model:
 		   Useful in last layer without relu
 		"""
 		with tf.variable_scope(self.get_layer_str()):
-			output = tf.contrib.layers.fully_connected(self.get_last_output(), num_output ,activation_fn=None)
+			weights_regularizer = tf.contrib.layers.l2_regularizer(scale=FLAGS.lambd)
+			output = tf.contrib.layers.fully_connected(self.get_last_output(), num_output ,activation_fn=None, weights_regularizer = weights_regularizer )
 
 		self.outputs.append(output)
 		return self
@@ -171,7 +167,7 @@ def convolutional_nn(sess, features, labels, is_training):
 		model.add_batch_norm(is_training)
 		model.add_relu()
 		model.add_max_pool(2,2)
-		model.add_dropout(0.25,is_training)
+		model.add_dropout(0.4,is_training)
 
 	model.flatten()
 	# define fully connected as tuples defining number of outputs
@@ -182,7 +178,7 @@ def convolutional_nn(sess, features, labels, is_training):
 		model.add_fully_connected(layer)
 		model.add_batch_norm(is_training)
 		model.add_relu()
-		model.add_dropout(0.25,is_training)
+		model.add_dropout(0.4,is_training)
 
 	# Output layer
 	num_outputs = 7
@@ -214,6 +210,12 @@ def compute_loss(cnn_output, labels):
 	"""
 	softmax_loss = tf.reduce_mean( tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels,logits=cnn_output) )
 	tf.add_to_collection('losses',softmax_loss)
+	
+	#Add L2 regularization loss to total loss
+	reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+	reg_total_loss = tf.add_n(reg_losses) 
+
+	tf.add_to_collection('losses',reg_total_loss)
 
 	total_loss = tf.add_n( tf.get_collection('losses'), name='total_loss' )
 
